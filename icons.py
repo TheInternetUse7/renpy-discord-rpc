@@ -158,14 +158,18 @@ def extract_icon(exe_path: str | Path, out_png_path: str | Path, size: int = 256
     return out_png_path
 
 
-def upload_to_catbox(file_path: str | Path, timeout_seconds: float = 30.0) -> str:
+def upload_to_litterbox(file_path: str | Path, *, time_to_live: str = "72h", timeout_seconds: float = 30.0) -> str:
     file_path = Path(file_path)
-    url = "https://catbox.moe/user/api.php"
+    url = "https://litterbox.catbox.moe/resources/internals/api.php"
+
+    ttl = str(time_to_live).strip().lower()
+    if ttl not in {"1h", "12h", "24h", "72h"}:
+        raise ValueError("time_to_live must be one of: 1h, 12h, 24h, 72h")
 
     with file_path.open("rb") as f:
         response = requests.post(
             url,
-            data={"reqtype": "fileupload"},
+            data={"reqtype": "fileupload", "time": ttl},
             files={"fileToUpload": (file_path.name, f)},
             timeout=timeout_seconds,
         )
@@ -173,7 +177,7 @@ def upload_to_catbox(file_path: str | Path, timeout_seconds: float = 30.0) -> st
     response.raise_for_status()
     text = (response.text or "").strip()
     if not text.startswith("http"):
-        raise RuntimeError(f"Unexpected Catbox response: {text}")
+        raise RuntimeError(f"Unexpected Litterbox response: {text}")
     return text
 
 
@@ -183,6 +187,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--size", type=int, default=256)
     parser.add_argument("--timeout", type=float, default=30.0)
     parser.add_argument("--png-out", default="")
+    parser.add_argument("--ttl", choices=["1h", "12h", "24h", "72h"], default="72h")
     args = parser.parse_args(argv)
 
     try:
@@ -192,7 +197,8 @@ def main(argv: list[str]) -> int:
             png_path = Path(tempfile.gettempdir()) / "renpy-discord-rpc-icon.png"
 
         extract_icon(args.exe, png_path, size=int(args.size))
-        url = upload_to_catbox(png_path, timeout_seconds=float(args.timeout))
+
+        url = upload_to_litterbox(png_path, time_to_live=str(args.ttl), timeout_seconds=float(args.timeout))
         print(url)
         return 0
     except Exception as e:

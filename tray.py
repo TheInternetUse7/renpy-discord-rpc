@@ -4,9 +4,13 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
+import tempfile
 
-from config import add_game_to_config, load_config
+import requests
+
+from config import add_game_to_config, load_config, set_game_icon_url
 from detection import find_running_game
+from icons import extract_icon, upload_to_litterbox
 from presence import DiscordRPC
 from utils import looks_like_path, sanitize_title
 
@@ -38,6 +42,121 @@ class TrayApp:
         self._img_running = None
         self._img_paused = None
 
+        self._icon_urls_validated = False
+        self._broken_icon_keys: set[str] = set()
+        self._icon_retry_after_monotonic: dict[str, float] = {}
+        self._icon_check_after_monotonic: dict[str, float] = {}
+
+    def _icon_url_works(self, url: str) -> bool:
+        url = (url or "").strip()
+        if not url.startswith("http"):
+            return False
+        try:
+            response = requests.get(url, stream=True, timeout=10)
+            try:
+                return bool(response.ok)
+            finally:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+        except Exception:
+            return False
+
+    def _is_litterbox_url(self, url: str) -> bool:
+        url = (url or "").strip().lower()
+        return url.startswith("https://litter.catbox.moe/") or url.startswith("https://litterbox.catbox.moe/")
+
+    def _game_key(self, *, exe_path: str = "", exe_name: str = "") -> str:
+        exe_path = (exe_path or "").strip()
+        exe_name = (exe_name or "").strip()
+        if exe_path:
+            return exe_path.lower()
+        if exe_name:
+            return exe_name.lower()
+        return ""
+
+    def _validate_icon_urls_now(self) -> None:
+        cfg = self._cfg
+
+        broken: set[str] = set()
+        for g in cfg.games:
+            if self._stop_event.is_set():
+                return
+
+            key = self._game_key(exe_path=g.exe_path, exe_name=g.exe_name)
+            if not key:
+                continue
+
+            url = (g.icon_url or "").strip()
+            if not url:
+                broken.add(key)
+                continue
+
+            if url.startswith("http"):
+                if not self._icon_url_works(url):
+                    broken.add(key)
+
+        self._broken_icon_keys = broken
+        self._icon_urls_validated = True
+
+    def _ensure_icon_url_for_running_game(self, exe_path: str, exe_name: str) -> str | None:
+        key = self._game_key(exe_path=exe_path, exe_name=exe_name)
+        if not key:
+            return None
+
+        cfg = self._cfg
+        g = None
+        for candidate in cfg.games:
+            if exe_path and candidate.exe_path and str(Path(candidate.exe_path)).lower() == str(Path(exe_path)).lower():
+                g = candidate
+                break
+            if exe_name and candidate.exe_name and candidate.exe_name.lower() == exe_name.lower():
+                g = candidate
+                break
+
+        if g is None:
+            return None
+
+        existing_url = (g.icon_url or "").strip() or None
+
+        if existing_url is not None and not existing_url.startswith("http"):
+            self._broken_icon_keys.discard(key)
+            return existing_url
+
+        now = time.monotonic()
+        check_after = float(self._icon_check_after_monotonic.get(key, 0.0))
+        if now >= check_after and existing_url is not None:
+            self._icon_check_after_monotonic[key] = now + 60.0
+            if not self._icon_url_works(existing_url):
+                self._broken_icon_keys.add(key)
+            else:
+                self._broken_icon_keys.discard(key)
+
+        if key not in self._broken_icon_keys:
+            return existing_url
+
+        if not g.exe_path:
+            return existing_url
+
+        retry_after = float(self._icon_retry_after_monotonic.get(key, 0.0))
+        if now < retry_after:
+            return existing_url
+
+        try:
+            stem = Path(g.exe_path).stem or "icon"
+            png_path = Path(tempfile.gettempdir()) / f"renpy-discord-rpc-{stem}.png"
+            extract_icon(g.exe_path, png_path, size=256)
+            new_url = upload_to_litterbox(png_path, time_to_live="72h", timeout_seconds=30.0)
+            set_game_icon_url(self.config_path, exe_path=g.exe_path, exe_name=g.exe_name, icon_url=new_url)
+            self._last_mtime = None
+            self._reload_config_if_changed()
+            self._broken_icon_keys.discard(key)
+            return new_url
+        except Exception:
+            self._icon_retry_after_monotonic[key] = now + 60.0
+            return existing_url
+
     def _reload_config_if_changed(self) -> None:
         try:
             mtime = self.config_path.stat().st_mtime
@@ -48,6 +167,10 @@ class TrayApp:
             with self._cfg_lock:
                 self._cfg = load_config(self.config_path)
                 self._last_mtime = mtime
+                self._icon_urls_validated = False
+                self._broken_icon_keys = set()
+                self._icon_retry_after_monotonic = {}
+                self._icon_check_after_monotonic = {}
 
     def _compute_presence(self) -> tuple[str, str, str | None, str | None] | None:
         cfg = self._cfg
@@ -88,7 +211,14 @@ class TrayApp:
 
         state = (matched.state if matched and matched.state else cfg.default_state) or cfg.default_state
 
-        large_image = (matched.icon_url if matched and matched.icon_url else cfg.fallback_large_image) or cfg.fallback_large_image
+        repaired_icon_url: str | None = None
+        if matched is not None:
+            repaired_icon_url = self._ensure_icon_url_for_running_game(matched.exe_path, matched.exe_name)
+
+        large_image = (
+            (repaired_icon_url if repaired_icon_url else (matched.icon_url if matched and matched.icon_url else None))
+            or cfg.fallback_large_image
+        )
         large_text = cfg.default_large_text
 
         if not large_image:
@@ -115,9 +245,16 @@ class TrayApp:
         last_presence: tuple[str, str, str | None, str | None] | None = None
         was_paused = False
 
+        self._reload_config_if_changed()
+        if not self._icon_urls_validated:
+            self._validate_icon_urls_now()
+
         while not self._stop_event.is_set():
             self._reload_config_if_changed()
             cfg = self._cfg
+
+            if not self._icon_urls_validated:
+                self._validate_icon_urls_now()
 
             if self.state.paused:
                 if not was_paused:
@@ -246,14 +383,24 @@ class TrayApp:
 
         self._icon = Icon("renpy-discord-rpc", self._img_running, "Ren'Py Discord RPC", menu)
         self._set_icon_image()
-        self._icon.run()
+        self._icon.run_detached()
 
-        self._stop_event.set()
-        if self._worker is not None:
+        try:
+            while not self._stop_event.is_set():
+                time.sleep(0.25)
+        except KeyboardInterrupt:
+            self._stop_event.set()
+        finally:
             try:
-                self._worker.join(timeout=10)
+                self._icon.stop()
             except Exception:
                 pass
+
+            if self._worker is not None:
+                try:
+                    self._worker.join(timeout=10)
+                except Exception:
+                    pass
 
 
 def _pick_exe_path() -> str:

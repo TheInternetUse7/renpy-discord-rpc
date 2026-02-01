@@ -119,3 +119,30 @@ def add_game_to_config(path: str | Path, exe_path: str) -> None:
         }
     )
     save_config_raw(path, data)
+
+
+def set_game_icon_url(path: str | Path, *, exe_path: str = "", exe_name: str = "", icon_url: str) -> bool:
+    path = Path(path)
+    data = load_config_raw(path)
+    games = data.get("games")
+    if not isinstance(games, list):
+        return False
+
+    exe_path_norm = str(Path(exe_path)) if exe_path else ""
+    exe_name_norm = str(exe_name) if exe_name else ""
+
+    for g in games:
+        if not isinstance(g, dict):
+            continue
+        existing_path = str(g.get("exe_path") or "")
+        existing_name = str(g.get("exe_name") or "")
+        if exe_path_norm and existing_path.lower() == exe_path_norm.lower():
+            g["icon_url"] = str(icon_url)
+            save_config_raw(path, data)
+            return True
+        if exe_name_norm and existing_name.lower() == exe_name_norm.lower():
+            g["icon_url"] = str(icon_url)
+            save_config_raw(path, data)
+            return True
+
+    return False

@@ -9,6 +9,7 @@ from config import AppConfig, load_config
 from detection import find_running_game
 from presence import DiscordRPC
 from utils import looks_like_path, sanitize_title
+from tray import TrayApp
 
 
 def _log(msg: str) -> None:
@@ -140,9 +141,14 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="renpy-discord-rpc")
     parser.add_argument("--config", default="config.json")
     parser.add_argument("--once", action="store_true")
+    parser.add_argument("--cli", action="store_true")
     args = parser.parse_args(argv)
 
-    return run(Path(args.config), once=bool(args.once))
+    if args.cli or args.once:
+        return run(Path(args.config), once=bool(args.once))
+
+    TrayApp(Path(args.config)).start()
+    return 0
 
 
 if __name__ == "__main__":
