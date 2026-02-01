@@ -4,7 +4,7 @@ a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[("config.example.json", ".")],
     hiddenimports=[
         "pystray._win32",
         "PIL.Image",

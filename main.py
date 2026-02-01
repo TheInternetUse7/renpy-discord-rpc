@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
 
-from config import AppConfig, load_config
+from config import AppConfig, ensure_config, load_config
 from detection import find_running_game
 from presence import DiscordRPC
 from utils import looks_like_path, sanitize_title
@@ -137,6 +138,24 @@ def run(cfg_path: Path, once: bool) -> int:
             pass
 
 
+def _resolve_config_path(arg: str) -> Path:
+    p = Path(arg)
+    if not p.is_absolute():
+        if getattr(sys, "frozen", False):
+            base_dir = Path(sys.executable).resolve().parent
+        else:
+            base_dir = Path.cwd()
+        p = base_dir / p
+
+    try:
+        return ensure_config(p)
+    except OSError:
+        appdata = os.environ.get("APPDATA")
+        base = Path(appdata) if appdata else (Path.home() / "AppData" / "Roaming")
+        fallback = base / "renpy-discord-rpc" / "config.json"
+        return ensure_config(fallback)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="renpy-discord-rpc")
     parser.add_argument("--config", default="config.json")
@@ -144,10 +163,12 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--cli", action="store_true")
     args = parser.parse_args(argv)
 
-    if args.cli or args.once:
-        return run(Path(args.config), once=bool(args.once))
+    cfg_path = _resolve_config_path(str(args.config))
 
-    TrayApp(Path(args.config)).start()
+    if args.cli or args.once:
+        return run(cfg_path, once=bool(args.once))
+
+    TrayApp(cfg_path).start()
     return 0
 
 

@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 import tempfile
@@ -81,6 +82,30 @@ def save_config_raw(path: str | Path, data: dict[str, Any]) -> None:
         os.fsync(f.fileno())
         tmp_name = f.name
     os.replace(tmp_name, path)
+
+
+def ensure_config(path: str | Path) -> Path:
+    path = Path(path)
+    if path.exists():
+        return path
+
+    base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    example = base_dir / "config.example.json"
+    if example.exists():
+        data = json.loads(example.read_text(encoding="utf-8"))
+    else:
+        data = {
+            "client_id": "1467506650771619982",
+            "scan_interval_seconds": 5,
+            "min_update_interval_seconds": 15,
+            "default_state": "Reading visual novel",
+            "default_large_text": "Ren'Py Visual Novel",
+            "fallback_large_image": "renpy",
+            "games": [],
+        }
+
+    save_config_raw(path, data)
+    return path
 
 
 def add_game_to_config(path: str | Path, exe_path: str) -> None:

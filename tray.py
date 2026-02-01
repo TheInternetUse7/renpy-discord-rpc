@@ -3,12 +3,13 @@ from __future__ import annotations
 import threading
 import time
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import tempfile
 
 import requests
 
-from config import add_game_to_config, load_config, set_game_icon_url
+from config import add_game_to_config, ensure_config, load_config, set_game_icon_url
 from detection import find_running_game
 from icons import extract_icon, upload_to_litterbox
 from presence import DiscordRPC
@@ -29,7 +30,12 @@ class LoopState:
 
 class TrayApp:
     def __init__(self, config_path: Path) -> None:
-        self.config_path = config_path
+        try:
+            self.config_path = ensure_config(config_path)
+        except OSError:
+            appdata = os.environ.get("APPDATA")
+            base = Path(appdata) if appdata else (Path.home() / "AppData" / "Roaming")
+            self.config_path = ensure_config(base / "renpy-discord-rpc" / "config.json")
         self.state = LoopState()
         self._stop_event = threading.Event()
         self._worker: threading.Thread | None = None
