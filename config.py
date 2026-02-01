@@ -1,6 +1,8 @@
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
+import tempfile
 from typing import Any
 
 
@@ -62,3 +64,58 @@ def load_config(path: str | Path) -> AppConfig:
         fallback_large_image=_as_str(data.get("fallback_large_image")) or "renpy",
         games=games,
     )
+
+
+def load_config_raw(path: str | Path) -> dict[str, Any]:
+    path = Path(path)
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def save_config_raw(path: str | Path, data: dict[str, Any]) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(data, indent=2, ensure_ascii=False)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False, dir=str(path.parent), prefix=path.name, suffix=".tmp") as f:
+        f.write(payload)
+        f.flush()
+        os.fsync(f.fileno())
+        tmp_name = f.name
+    os.replace(tmp_name, path)
+
+
+def add_game_to_config(path: str | Path, exe_path: str) -> None:
+    path = Path(path)
+    data = load_config_raw(path)
+    games = data.get("games")
+    if not isinstance(games, list):
+        games = []
+        data["games"] = games
+
+    exe_path_norm = str(Path(exe_path))
+    exe_name = Path(exe_path_norm).name
+    stem = Path(exe_path_norm).stem
+
+    for g in games:
+        if not isinstance(g, dict):
+            continue
+        existing_path = str(g.get("exe_path") or "")
+        existing_name = str(g.get("exe_name") or "")
+        if existing_path.lower() == exe_path_norm.lower() or existing_name.lower() == exe_name.lower():
+            g["exe_path"] = exe_path_norm
+            g["exe_name"] = exe_name
+            if not g.get("name"):
+                g["name"] = stem
+            save_config_raw(path, data)
+            return
+
+    games.append(
+        {
+            "name": stem,
+            "exe_name": exe_name,
+            "exe_path": exe_path_norm,
+            "icon_url": "",
+            "state": "",
+            "details_template": "{game}",
+        }
+    )
+    save_config_raw(path, data)

@@ -1,0 +1,18 @@
+{
+  "client_id": "",
+  "scan_interval_seconds": 5,
+  "min_update_interval_seconds": 15,
+  "default_state": "Reading visual novel",
+  "default_large_text": "Ren'Py Visual Novel",
+  "fallback_large_image": "renpy",
+  "games": [
+    {
+      "name": "Example Game",
+      "exe_name": "ExampleGame.exe",
+      "exe_path": "C:\\Games\\ExampleGame\\ExampleGame.exe",
+      "icon_url": "",
+      "state": "",
+      "details_template": "{game}"
+    }
+  ]
+}
