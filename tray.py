@@ -137,17 +137,27 @@ class TrayApp:
             return existing_url
 
         if not g.exe_path:
-            return existing_url
+            return None
 
         retry_after = float(self._icon_retry_after_monotonic.get(key, 0.0))
         if now < retry_after:
-            return existing_url
+            return None
 
         try:
             stem = Path(g.exe_path).stem or "icon"
             png_path = Path(tempfile.gettempdir()) / f"renpy-discord-rpc-{stem}.png"
             extract_icon(g.exe_path, png_path, size=256)
-            new_url = upload_to_litterbox(png_path, time_to_live="72h", timeout_seconds=30.0)
+
+            new_url = ""
+            for attempt in range(3):
+                try:
+                    new_url = upload_to_litterbox(png_path, time_to_live="72h", timeout_seconds=30.0)
+                    break
+                except Exception:
+                    if attempt >= 2:
+                        raise
+                    time.sleep(1.0 + (attempt * 2.0))
+
             set_game_icon_url(self.config_path, exe_path=g.exe_path, exe_name=g.exe_name, icon_url=new_url)
             self._last_mtime = None
             self._reload_config_if_changed()
@@ -155,7 +165,7 @@ class TrayApp:
             return new_url
         except Exception:
             self._icon_retry_after_monotonic[key] = now + 60.0
-            return existing_url
+            return None
 
     def _reload_config_if_changed(self) -> None:
         try:
@@ -212,11 +222,13 @@ class TrayApp:
         state = (matched.state if matched and matched.state else cfg.default_state) or cfg.default_state
 
         repaired_icon_url: str | None = None
+        matched_key = ""
         if matched is not None:
+            matched_key = self._game_key(exe_path=matched.exe_path, exe_name=matched.exe_name)
             repaired_icon_url = self._ensure_icon_url_for_running_game(matched.exe_path, matched.exe_name)
 
         large_image = (
-            (repaired_icon_url if repaired_icon_url else (matched.icon_url if matched and matched.icon_url else None))
+            (repaired_icon_url if repaired_icon_url else (None if (matched_key and matched_key in self._broken_icon_keys) else (matched.icon_url if matched and matched.icon_url else None)))
             or cfg.fallback_large_image
         )
         large_text = cfg.default_large_text
