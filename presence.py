@@ -4,6 +4,7 @@ import time
 from dataclasses import dataclass
 
 from pypresence import Presence
+from pypresence.types import ActivityType, StatusDisplayType
 
 
 @dataclass
@@ -56,6 +57,9 @@ class DiscordRPC:
         *,
         details: str,
         state: str,
+        activity_type: int | ActivityType | None = None,
+        status_display_type: int | StatusDisplayType | None = None,
+        name: str | None = None,
         large_image: str | None = None,
         large_text: str | None = None,
         force: bool = False,
@@ -68,6 +72,27 @@ class DiscordRPC:
             "details": details,
             "state": state,
         }
+
+        if activity_type is not None:
+            try:
+                payload["activity_type"] = (
+                    ActivityType(int(activity_type)) if isinstance(activity_type, int) else activity_type
+                )
+            except Exception:
+                pass
+
+        if status_display_type is not None:
+            try:
+                payload["status_display_type"] = (
+                    StatusDisplayType(int(status_display_type))
+                    if isinstance(status_display_type, int)
+                    else status_display_type
+                )
+            except Exception:
+                pass
+
+        if name is not None:
+            payload["name"] = str(name)
         if large_image:
             payload["large_image"] = large_image
             if large_text:

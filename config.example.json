@@ -5,6 +5,8 @@
   "default_state": "Reading visual novel",
   "default_large_text": "Ren'Py Visual Novel",
   "fallback_large_image": "renpy",
+  "activity_type": "playing",
+  "status_display_type": "details",
   "games": [
     {
       "name": "Example Game",

@@ -100,11 +100,36 @@ def run(cfg_path: Path, once: bool) -> int:
             large_image = (matched.icon_url if matched and matched.icon_url else cfg.fallback_large_image) or cfg.fallback_large_image
             large_text = cfg.default_large_text
 
+            activity_type = (
+                matched.activity_type
+                if matched is not None and matched.activity_type is not None
+                else cfg.activity_type
+            )
+            status_display_type = (
+                matched.status_display_type
+                if matched is not None and matched.status_display_type is not None
+                else cfg.status_display_type
+            )
+
             try:
                 if large_image:
-                    rpc.update(details=details, state=state, large_image=large_image, large_text=large_text)
+                    rpc.update(
+                        details=details,
+                        state=state,
+                        name=game_name,
+                        activity_type=activity_type,
+                        status_display_type=status_display_type,
+                        large_image=large_image,
+                        large_text=large_text,
+                    )
                 else:
-                    rpc.update(details=details, state=state)
+                    rpc.update(
+                        details=details,
+                        state=state,
+                        name=game_name,
+                        activity_type=activity_type,
+                        status_display_type=status_display_type,
+                    )
                 _log(
                     f"RPC update sent: details={details!r} state={state!r} "
                     f"large_image={'set' if large_image else 'unset'}"
@@ -112,7 +137,13 @@ def run(cfg_path: Path, once: bool) -> int:
             except Exception as e:
                 _log(f"RPC update failed: {e}")
                 try:
-                    rpc.update(details=details, state=state)
+                    rpc.update(
+                        details=details,
+                        state=state,
+                        name=game_name,
+                        activity_type=activity_type,
+                        status_display_type=status_display_type,
+                    )
                     _log("RPC update retried without images")
                 except Exception as e2:
                     _log(f"RPC update retry failed: {e2}")

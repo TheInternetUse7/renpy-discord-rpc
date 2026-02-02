@@ -15,6 +15,8 @@ class GameConfig:
     icon_url: str
     state: str
     details_template: str
+    activity_type: int | None
+    status_display_type: int | None
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,8 @@ class AppConfig:
     default_state: str
     default_large_text: str
     fallback_large_image: str
+    activity_type: int | None
+    status_display_type: int | None
     games: list[GameConfig]
 
 
@@ -37,6 +41,56 @@ def _as_float(value: Any, default: float) -> float:
         return float(value)
     except Exception:
         return default
+
+
+def _parse_activity_type(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        v = int(value)
+        return v if v in {0, 2, 3, 5} else None
+    s = str(value).strip().lower()
+    if not s:
+        return None
+    if s in {"playing", "play", "0"}:
+        return 0
+    if s in {"listening", "listen", "2"}:
+        return 2
+    if s in {"watching", "watch", "3"}:
+        return 3
+    if s in {"competing", "compete", "5"}:
+        return 5
+    try:
+        v = int(s)
+        return v if v in {0, 2, 3, 5} else None
+    except Exception:
+        return None
+
+
+def _parse_status_display_type(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        v = int(value)
+        return v if v in {0, 1, 2} else None
+    s = str(value).strip().lower()
+    if not s:
+        return None
+    if s in {"name", "app", "0"}:
+        return 0
+    if s in {"state", "1"}:
+        return 1
+    if s in {"details", "detail", "2"}:
+        return 2
+    try:
+        v = int(s)
+        return v if v in {0, 1, 2} else None
+    except Exception:
+        return None
 
 
 def load_config(path: str | Path) -> AppConfig:
@@ -53,6 +107,8 @@ def load_config(path: str | Path) -> AppConfig:
                 icon_url=_as_str(raw.get("icon_url")),
                 state=_as_str(raw.get("state")),
                 details_template=_as_str(raw.get("details_template")) or "{title}",
+                activity_type=_parse_activity_type(raw.get("activity_type")),
+                status_display_type=_parse_status_display_type(raw.get("status_display_type")),
             )
         )
 
@@ -63,6 +119,8 @@ def load_config(path: str | Path) -> AppConfig:
         default_state=_as_str(data.get("default_state")) or "Reading visual novel",
         default_large_text=_as_str(data.get("default_large_text")) or "Ren'Py Visual Novel",
         fallback_large_image=_as_str(data.get("fallback_large_image")) or "renpy",
+        activity_type=_parse_activity_type(data.get("activity_type")),
+        status_display_type=_parse_status_display_type(data.get("status_display_type")),
         games=games,
     )
 

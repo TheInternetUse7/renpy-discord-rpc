@@ -188,7 +188,7 @@ class TrayApp:
                 self._icon_retry_after_monotonic = {}
                 self._icon_check_after_monotonic = {}
 
-    def _compute_presence(self) -> tuple[str, str, str | None, str | None] | None:
+    def _compute_presence(self) -> tuple[str, str, str, int | None, int | None, str | None, str | None] | None:
         cfg = self._cfg
 
         exe_names = {g.exe_name.lower() for g in cfg.games if g.exe_name}
@@ -227,6 +227,15 @@ class TrayApp:
 
         state = (matched.state if matched and matched.state else cfg.default_state) or cfg.default_state
 
+        activity_type = (
+            matched.activity_type if matched is not None and matched.activity_type is not None else cfg.activity_type
+        )
+        status_display_type = (
+            matched.status_display_type
+            if matched is not None and matched.status_display_type is not None
+            else cfg.status_display_type
+        )
+
         repaired_icon_url: str | None = None
         matched_key = ""
         if matched is not None:
@@ -240,9 +249,9 @@ class TrayApp:
         large_text = cfg.default_large_text
 
         if not large_image:
-            return details, state, None, None
+            return details, state, game_name, activity_type, status_display_type, None, None
 
-        return details, state, large_image, large_text
+        return details, state, game_name, activity_type, status_display_type, large_image, large_text
 
     def _ensure_rpc(self) -> DiscordRPC | None:
         self._reload_config_if_changed()
@@ -260,7 +269,7 @@ class TrayApp:
             return None
 
     def _worker_loop(self) -> None:
-        last_presence: tuple[str, str, str | None, str | None] | None = None
+        last_presence: tuple[str, str, str, int | None, int | None, str | None, str | None] | None = None
         was_paused = False
 
         self._reload_config_if_changed()
@@ -304,15 +313,29 @@ class TrayApp:
                 time.sleep(cfg.scan_interval_seconds)
                 continue
 
-            details, state, large_image, large_text = presence
+            details, state, name, activity_type, status_display_type, large_image, large_text = presence
 
             try:
-                rpc.update(details=details, state=state, large_image=large_image, large_text=large_text)
+                rpc.update(
+                    details=details,
+                    state=state,
+                    name=name,
+                    activity_type=activity_type,
+                    status_display_type=status_display_type,
+                    large_image=large_image,
+                    large_text=large_text,
+                )
                 last_presence = presence
             except Exception:
                 try:
-                    rpc.update(details=details, state=state)
-                    last_presence = (details, state, None, None)
+                    rpc.update(
+                        details=details,
+                        state=state,
+                        name=name,
+                        activity_type=activity_type,
+                        status_display_type=status_display_type,
+                    )
+                    last_presence = (details, state, name, activity_type, status_display_type, None, None)
                 except Exception:
                     pass
 
